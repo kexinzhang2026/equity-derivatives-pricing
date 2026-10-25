@@ -79,3 +79,12 @@ def implied_vol(target_price, S, K, T, r, q=0.0, is_call=True, lo=1e-6, hi=5.0):
     if f_lo * f_hi > 0:
         return np.nan
     return brentq(f, lo, hi, xtol=1e-12, maxiter=200)
+
+
+def char_func(u, T, r, q, sigma):
+    """phi(u) = E[exp(i u X_T)] with X_T = ln(S_T/S_0) ~ N((r - q - sigma^2/2) T, sigma^2 T).
+
+    Used to validate the COS engine against the closed form above.
+    """
+    u = np.asarray(u, dtype=complex)
+    return np.exp(1j * u * (r - q - 0.5 * sigma**2) * T - 0.5 * sigma**2 * u**2 * T)

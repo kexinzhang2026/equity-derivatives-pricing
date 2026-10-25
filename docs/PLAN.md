@@ -13,15 +13,20 @@
 - 测试：Hull 教材数值、put-call parity、无套利边界、σ→0 极限、Greeks vs 有限差分、IV 往返
 - 一个已经能讲的点：深度实值+低波动时 IV 反解是病态的（vega≈1e-9），所以市场数据一律用虚值一侧反解
 
-## 阶段 1　定价引擎：三法互验（约 2 周）
-| 方法 | 内容 | 关键测试 |
+## 阶段 1　定价引擎：三法互验（已完成）
+| 方法 | 实现 | 验证结果 |
 |---|---|---|
-| 半解析 | Heston 特征函数 + **COS 方法**（Fang–Oosterlee 2008） | Heston→BS 极限（ξ→0）；N 增大时指数收敛 |
-| PDE | **Crank–Nicolson**，对数价格网格；Rannacher 起步平滑非光滑收益 | 网格加密后**二阶收敛**（log-log 斜率≈2）；美式看跌的提前行权边界 |
-| 蒙特卡洛 | GBM 精确离散 + Heston（QE 格式, Andersen 2008）；对偶变量、控制变量；美式用 **Longstaff–Schwartz** | 误差按 1/√N 下降；方差缩减倍数；LSM vs PDE 美式价格 |
+| 半解析 | Heston 特征函数（little Heston trap 形式）+ COS 方法 | 与 Lewis 积分（独立方法）一致到 1e-9；BS 下 N≈48 达到机器精度；ξ→0 时误差按 ξ² 收敛到 BS |
+| PDE | Crank–Nicolson + Rannacher 起步 + 收益单元平均；美式用罚函数法 | 实测收敛斜率 −2.00；Rannacher 把 strike 处 gamma 误差从 0.2 降到 1e-5；美式看跌与二叉树一致到 1e-3 |
+| 蒙特卡洛 | GBM 精确离散、对偶变量、控制变量；Heston QE 格式；Longstaff–Schwartz（样本外规则） | 控制变量方差缩减约 8 倍；QE 在 Feller 条件不满足时与 COS 相差 0.2 个标准误；LSM 4.4758 低于 PDE 美式 4.4867（理论上应为下界） |
 
-产出图：三方法价格对比表、PDE 收敛阶图、MC 置信区间 vs 路径数、COS 收敛图。
-你的数值背景在这一阶段最有发挥空间：CN 的稳定性/振荡、Rannacher 为什么有效、COS 截断区间选择，都是可以深挖的面试点。
+结果表与四张收敛图：`reports/stage1_crossvalidation.md`，`reports/figures/`（`python scripts/stage1_crossval.py` 重新生成）。
+推导：`docs/derivations/02`–`05`。
+
+面试可以讲的发现：
+- Longstaff–Schwartz 论文表 1 的有限差分基准 4.478 其实偏低，精确值约 4.4867（PDE 与 2 万步二叉树一致）
+- Fang–Oosterlee 论文给的 Heston 参考值 5.785155450 与两种独立方法的结果 5.7851554344 相差 2e-8
+- 2D Heston PDE（ADI）暂不做：Heston 由 COS 和 MC 两种方法互验；如果阶段 3 需要 PDE 定价 autocallable，再补
 
 ## 阶段 2　真实数据校准（约 2 周）
 - 数据：SPX 期权链 → 清洗（剔除零买价、宽价差、违反无套利的报价）→ 虚值一侧反解 IV → 从 put-call parity 隐含出远期和贴现率
@@ -33,7 +38,8 @@
 ## 阶段 3　奇异产品与模型风险（约 2 周）
 - 先做**下跌敲入障碍期权**：BS 下有解析解，可以验证 PDE/MC 的障碍处理（连续 vs 离散监测，Broadie–Glasserman–Kou 修正）
 - 主产品 **autocallable**（高盛结构化产品核心）：观察日自动赎回 + 票息 + 下跌敲入，PDE 和 MC 两种实现
-- 模型风险：同一组市场数据下，BS（平值波动率）/ Heston / 局部波动率（Dupire，可选）给出的价格差异，以及差异来自哪里（远期偏斜、波动率的波动率）
+- 局部波动率：从校准后的隐含波动率曲面用 Dupire 公式构造（阶段 2 末尾，约 1 周）
+- 模型风险：同一组市场数据下，BS（平值波动率）/ Heston / 局部波动率（Dupire）给出的价格差异，以及差异来自哪里（远期偏斜、波动率的波动率）
 - 产出：模型间价格差异表 + 一段你自己的结论
 
 ## 阶段 4　Greeks 与对冲回测（约 1.5 周）
@@ -48,9 +54,9 @@
 ---
 
 ## 需要你决定的事
-1. **数据来源**：云端环境访问不了 Yahoo/CBOE，所以数据抓取脚本需要在你自己电脑上运行。
+1. **数据来源**（脚本已写好：`scripts/fetch_spx_chain.py`，OptionMetrics 读取接口在 `src/derivpricing/data/loaders.py`）。云端环境访问不了 Yahoo/CBOE，抓取需要在你自己电脑上运行。
    - 如果你有学校的 **WRDS / OptionMetrics** 权限：最好，有历史数据，可以做参数稳定性的时间序列
    - 否则：用 yfinance 每天抓一次 SPX 期权链快照，积累 2–4 周数据
-2. **奇异产品**：建议障碍期权（做验证）+ autocallable（主产品），还是只做其中一个？
+2. ~~奇异产品~~ 已决定：障碍期权（做验证）+ autocallable（主产品）
 3. **局部波动率模型**放不放进模型风险对比？加上它故事更完整（Heston vs LV 对 autocallable 定价差异是业界经典问题），但多 1 周工作量
 4. **GitHub 仓库**：需要你在 GitHub 上新建一个空仓库（建议名 `derivatives-pricing-engine`），告诉我名字后我来推送
