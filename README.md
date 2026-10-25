@@ -1,5 +1,7 @@
 # Derivatives Pricing Engine
 
+[![tests](https://github.com/kexinzhang2026/equity-derivatives-pricing/actions/workflows/tests.yml/badge.svg)](https://github.com/kexinzhang2026/equity-derivatives-pricing/actions/workflows/tests.yml)
+
 One product, three independent pricing methods, checked against each other — then calibrated to real SPX options and used to measure model risk on an autocallable.
 
 | Module | Status |
@@ -20,6 +22,8 @@ See [reports/stage1_crossvalidation.md](reports/stage1_crossvalidation.md).
 
 ![PDE convergence](reports/figures/pde_convergence.png)
 
+**Full write-up: [technical report](reports/technical_report.md).**
+
 ## Headline results
 - **Three methods agree**: COS, Crank–Nicolson (measured order 2.00) and Monte Carlo on European, Heston and American prices.
 - **SPX calibration**: Heston fits 2023 surfaces to ~0.8 vol pt but misses the 1-month skew; ρ is stable (CV 3%) while κ and ξ move together (weekly-change correlation 0.96), the ridge predicted by the synthetic identifiability study. In March 2020 the fit error triples.
@@ -35,8 +39,8 @@ SPX end-of-day option quotes from [optionsDX](https://www.optionsdx.com) (free r
 ```
 src/derivpricing/   models/ engines/ products/ calibration/ hedging/ data/
 tests/              property tests: parity, limits, convergence order
-notebooks/          analysis, one per stage
-reports/            figures and the technical report
+reports/            stage reports, technical report, figures
+scripts/            one script per stage regenerates its report
 docs/derivations/   every formula used in code, derived step by step
 ```
 

@@ -11,7 +11,7 @@ dependencies = ["numpy>=1.26", "scipy>=1.11", "pandas>=2.0", "matplotlib>=3.8"]
 
 [project.optional-dependencies]
 data = ["yfinance>=0.2"]
-dev = ["pytest>=8", "jupyter"]
+dev = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
