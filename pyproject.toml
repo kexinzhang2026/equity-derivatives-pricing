@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "derivpricing"
+version = "0.1.0"
+description = "Cross-validated derivatives pricing: analytic/Fourier, PDE and Monte Carlo engines, Heston/SABR calibration to SPX, exotic model risk and hedging backtests."
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "scipy>=1.11", "pandas>=2.0", "matplotlib>=3.8"]
+
+[project.optional-dependencies]
+data = ["yfinance>=0.2"]
+dev = ["pytest>=8", "jupyter"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long-running convergence tests"]
