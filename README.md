@@ -22,7 +22,7 @@ See [reports/stage1_crossvalidation.md](reports/stage1_crossvalidation.md).
 
 ![PDE convergence](reports/figures/pde_convergence.png)
 
-**Full write-up: [technical report](reports/technical_report.md).**
+**Full write-up: [technical report](reports/technical_report.md) · [portfolio report (PDF)](reports/portfolio/portfolio_report.pdf), LaTeX source in `reports/portfolio/`.**
 
 ## Headline results
 - **Three methods agree**: COS, Crank–Nicolson (measured order 2.00) and Monte Carlo on European, Heston and American prices.

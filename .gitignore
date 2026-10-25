@@ -6,3 +6,10 @@ data/raw/*
 !data/raw/.gitkeep
 .venv/
 data/optionsdx/
+
+# LaTeX build files
+reports/portfolio/*.aux
+reports/portfolio/*.bbl
+reports/portfolio/*.blg
+reports/portfolio/*.log
+reports/portfolio/*.out
