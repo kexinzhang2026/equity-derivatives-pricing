@@ -64,10 +64,11 @@ def load_optionsdx(path: str | Path) -> pd.DataFrame:
     optionsDX ships one row per (quote date, expiry, strike) with calls and puts side by
     side, and bracketed headers like "[C_BID]". Columns used: QUOTE_DATE, EXPIRE_DATE,
     STRIKE, UNDERLYING_LAST, C_BID, C_ASK, P_BID, P_ASK, C_VOLUME, P_VOLUME.
-    Accepts a single .txt/.csv file or a folder of them.
+    Accepts a single file or a folder; .txt, .csv and their gzipped versions (.gz) are read.
     """
     path = Path(path)
-    files = sorted(path.glob("*.txt")) + sorted(path.glob("*.csv")) if path.is_dir() else [path]
+    patterns = ("*.txt", "*.csv", "*.txt.gz", "*.csv.gz")
+    files = sorted(f for pat in patterns for f in path.glob(pat)) if path.is_dir() else [path]
     frames = []
     for f in files:
         raw = pd.read_csv(f, skipinitialspace=True, low_memory=False)

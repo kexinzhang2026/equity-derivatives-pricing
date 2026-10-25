@@ -43,7 +43,8 @@ def _cell_average(payoff: Callable, x: np.ndarray, h: float, n_sub: int = 32) ->
 
 def solve(S0, T, r, q, sigma, payoff: Callable, lower: Callable, upper: Callable,
           x_min, x_max, M=400, N=400, american=False, rannacher=True,
-          step_hook: Callable | None = None) -> PDEResult:
+          step_hook: Callable | None = None, barrier_at_lower=False,
+          history: list | None = None) -> PDEResult:
     """Generic solver. Products supply the payoff and the Dirichlet boundary values.
 
     sigma            constant volatility, or a function sigma(t, S) (local volatility),
@@ -51,12 +52,21 @@ def solve(S0, T, r, q, sigma, payoff: Callable, lower: Callable, upper: Callable
     payoff(S)        terminal payoff (vectorised)
     lower(tau, S)    value at x_min;  upper(tau, S) value at x_max
     step_hook(tau, S, V) optional: modify V after each step (e.g. discrete barrier monitoring)
+    history          optional list; (tau, V) after every step is appended (for coupled
+                     problems such as a knock-in, where one grid needs the other's values)
     The grid is shifted so that ln S0 sits exactly on a node.
+    barrier_at_lower=True keeps x_min itself on the grid as well (for a knock-out barrier
+    there) by adjusting h instead of shifting; otherwise the barrier would move by up
+    to h/2 and the price error would drop to first order.
     """
     x0 = np.log(S0)
     h = (x_max - x_min) / M
-    shift = (x0 - x_min) / h - round((x0 - x_min) / h)            # put x0 on a node
-    x = x_min + (shift + np.arange(M + 1)) * h
+    if barrier_at_lower:
+        h = (x0 - x_min) / max(1, round((x0 - x_min) / h))         # x_min and x0 both nodes
+        x = x_min + np.arange(M + 1) * h
+    else:
+        shift = (x0 - x_min) / h - round((x0 - x_min) / h)        # put x0 on a node
+        x = x_min + (shift + np.arange(M + 1)) * h
     S = np.exp(x)
     i0 = int(round((x0 - x[0]) / h))
 
@@ -101,6 +111,8 @@ def solve(S0, T, r, q, sigma, payoff: Callable, lower: Callable, upper: Callable
         V = np.concatenate(([V_new_lo], V_int, [V_new_hi]))
         if step_hook is not None:
             V = step_hook(tau, S, V)
+        if history is not None:
+            history.append((tau, V.copy()))
 
     # Greeks from the grid: V_S = V_x / S,  V_SS = (V_xx - V_x) / S^2
     Vx = (V[i0 + 1] - V[i0 - 1]) / (2 * h)

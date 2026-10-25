@@ -104,6 +104,23 @@ def heston_paths_qe(S0, T, r, q, p: HestonParams, n_steps, n_paths, rng, psi_c=1
     return S, v
 
 
+def local_vol_paths(S0, T, r, q, sigma_fn, n_steps, n_paths, rng):
+    """Local volatility paths by an Euler step in log-price:
+        ln S_{t+dt} = ln S_t + (r - q - sigma^2/2) dt + sigma sqrt(dt) Z,  sigma = sigma_fn(t, S_t).
+    The log step keeps S positive; with daily steps the discretisation bias is far below
+    the Monte Carlo error for the products priced here.
+    """
+    dt = T / n_steps
+    S = np.empty((n_paths, n_steps + 1))
+    S[:, 0] = S0
+    log_S = np.full(n_paths, np.log(S0))
+    for n in range(n_steps):
+        sig = sigma_fn(n * dt, S[:, n])
+        log_S = log_S + (r - q - 0.5 * sig**2) * dt + sig * np.sqrt(dt) * rng.standard_normal(n_paths)
+        S[:, n + 1] = np.exp(log_S)
+    return S
+
+
 # ---------------------------------------------------------------- estimators
 
 def plain(discounted_payoffs) -> MCResult:

@@ -87,3 +87,25 @@ def build_surface(quotes: pd.DataFrame, min_T: float = 7 / 365, max_rel_spread: 
     cols = ["quote_date", "expiry", "T", "K", "F", "D", "k", "is_call", "bid", "ask", "mid",
             "iv", "iv_bid", "iv_ask", "vega"]
     return s[cols].sort_values(["quote_date", "T", "K"]).reset_index(drop=True)
+
+
+def calibration_subset(surf: pd.DataFrame, tenors=(1/12, 2/12, 3/12, 6/12, 9/12, 1.0, 1.5, 2.0),
+                       strikes_per_expiry: int = 25) -> pd.DataFrame:
+    """Pick one listed expiry nearest to each target tenor and thin each smile to
+    `strikes_per_expiry` strikes evenly spaced in log-moneyness.
+
+    SPX lists 40+ expiries and hundreds of strikes per day. Weekly expiries crowd the
+    short end, so fitting all of them would let the first month dominate the objective;
+    a fixed tenor grid also makes fits on different dates comparable.
+    """
+    expiries = np.sort(surf["T"].unique())
+    chosen = sorted({expiries[np.argmin(np.abs(expiries - t))] for t in tenors})
+    parts = []
+    for T in chosen:
+        sl = surf[surf["T"] == T].sort_values("k")
+        if len(sl) > strikes_per_expiry:
+            targets = np.linspace(sl["k"].min(), sl["k"].max(), strikes_per_expiry)
+            idx = np.unique([np.argmin(np.abs(sl["k"].to_numpy() - t)) for t in targets])
+            sl = sl.iloc[idx]
+        parts.append(sl)
+    return pd.concat(parts, ignore_index=True)
