@@ -57,7 +57,7 @@ def cross_validation_table():
                       N=512, L=12)
     Sh, _ = mc.heston_paths_qe(100.0, 1.0, 0.0, 0.0, FO, 64, 500_000, rng)
     h_mc = mc.control_variate(np.maximum(Sh[:, -1] - 100.0, 0), Sh[:, -1], 100.0)
-    rows.append(("European call, Heston", "n/a", f"{h_cos:.4f}", "(2D ADI: not built)", fmt_mc(h_mc)))
+    rows.append(("European call, Heston (S=K=100, T=1, r=q=0)", "n/a", f"{h_cos:.4f}", "(2D ADI: not built)", fmt_mc(h_mc)))
 
     # 3. American put (Longstaff-Schwartz test case)
     a_pde = pde.price_vanilla(36.0, 40.0, 1.0, 0.06, 0.2, is_call=False, american=True,
@@ -178,8 +178,10 @@ if __name__ == "__main__":
 
 {table}
 
-- Black-Scholes and Heston parameters: S={S}, K={K}, T={T}, r={r}, σ={SIG}, q={Q};
-  Heston from Fang & Oosterlee (2008): v0=0.0175, κ=1.5768, θ=0.0398, ξ=0.5751, ρ=−0.5711.
+- Black-Scholes call: S={S}, K={K}, T={T}, r={r}, σ={SIG}, q={Q}.
+- Heston call: the Fang & Oosterlee (2008) test case, a different contract: S=100, K=100, T=1, r=0, q=0;
+  v0=0.0175, κ=1.5768, θ=0.0398, ξ=0.5751, ρ=−0.5711. Published reference value 5.785155450.
+- American put: S=36, K=40, T=1, r=0.06, σ=0.2 (Longstaff & Schwartz 2001).
 - American put: the PDE value is continuous exercise; LSM uses 50 exercise dates and an
   out-of-sample rule, so it is a lower bound for the 50-date Bermudan, itself below the American.
 

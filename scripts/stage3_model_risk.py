@@ -78,6 +78,7 @@ for name, P in paths.items():
     di = barrier.down_and_in_put_mc(P, S0, 0.6 * S0, r, spec.T)
     rows.append({"model": name, "autocall_mc": res.price, "autocall_se": res.stderr,
                  "autocall_pde": pde_price, "fair_coupon": fair,
+                 "coupon_se": res.stderr / ((res.price - a0.price) / spec.coupon),
                  "p_first_call": diag["p_call"][0], "p_ki_loss": diag["p_ki_loss"],
                  "expected_life": diag["expected_life"],
                  "dip_mc": 100 * di.price / S0, "dip_se": 100 * di.stderr / S0,
@@ -119,6 +120,90 @@ fig.tight_layout()
 fig.savefig(FIG / "autocall_model_risk.png")
 plt.close(fig)
 
+# ---------------------------------------------------------------- vanilla repricing on the real surface
+# "Fitted to the same surface" is a claim to check, not assume. Reprice every calibration
+# option under each model and compare implied vols with the market mid, per expiry.
+from derivpricing.engines import pde
+from derivpricing.models import black_scholes as bs
+
+
+def lv_vanilla_ivs(lv_model, rows):
+    """Implied vols of the surface's options under a local vol model, by Crank-Nicolson.
+    Strikes are placed at the same log-moneyness k relative to the model's own forward."""
+    out = np.empty(len(rows))
+    for j, (_, row) in enumerate(rows.iterrows()):
+        T, F_m = row["T"], S0 * np.exp((r - q) * row["T"])
+        K = F_m * np.exp(row["k"])
+        half = 8 * 0.3 * np.sqrt(T) + abs(row["k"]) + 0.1
+        if row["is_call"]:
+            pay, lo_b = (lambda S, K=K: np.maximum(S - K, 0.0)), (lambda tau, S: 0.0)
+            up_b = lambda tau, S, K=K: S * np.exp(-q * tau) - K * np.exp(-r * tau)
+        else:
+            pay, up_b = (lambda S, K=K: np.maximum(K - S, 0.0)), (lambda tau, S: 0.0)
+            lo_b = lambda tau, S, K=K: K * np.exp(-r * tau) - S * np.exp(-q * tau)
+        v = pde.solve(S0, T, r, q, lv_model.sigma, pay, lo_b, up_b, np.log(S0) - half, np.log(S0) + half,
+                      M=500, N=max(100, int(400 * T))).price
+        try:
+            out[j] = bs.implied_vol(v, S0, K, T, r, q, is_call=bool(row["is_call"]))
+        except ValueError:
+            out[j] = np.nan
+    return out
+
+
+def iv_from_prices(prices, rows):
+    """Black-76 implied vols for prices quoted on each row's own forward and discount factor."""
+    out = np.empty(len(rows))
+    for j, (_, row) in enumerate(rows.iterrows()):
+        T, F, D = row["T"], row["F"], row["D"]
+        try:
+            out[j] = bs.implied_vol(prices[j], D * F, row["K"], T, -np.log(D) / T, 0.0, is_call=bool(row["is_call"]))
+        except ValueError:
+            out[j] = np.nan
+    return out
+
+
+rep = calib[["T", "k", "K", "F", "D", "is_call", "iv", "iv_bid", "iv_ask"]].copy()
+rep["bs"] = atm_vol
+rep["heston"] = iv_from_prices(heston_calib.model_prices(heston, calib, N=256), calib)
+rep["lv"] = lv_vanilla_ivs(lv, rep)
+rep["half_spread"] = 0.5 * (rep["iv_ask"] - rep["iv_bid"])
+models = ["bs", "heston", "lv"]
+rmse = lambda e: float(np.sqrt(np.nanmean(e**2)))
+by_T = pd.DataFrame({"T": Ts})
+for m in models:
+    by_T[m] = [100 * rmse(rep.loc[rep["T"] == T, m] - rep.loc[rep["T"] == T, "iv"]) for T in Ts]
+    by_T[m + "_bias"] = [100 * float(np.nanmean(rep.loc[rep["T"] == T, m] - rep.loc[rep["T"] == T, "iv"])) for T in Ts]
+by_T["half_spread"] = [100 * float(rep.loc[rep["T"] == T, "half_spread"].median()) for T in Ts]
+tot = {m: 100 * rmse(rep[m] - rep["iv"]) for m in models}
+by_T.to_csv(REP / "stage3_vanilla_repricing.csv", index=False)
+print(by_T.round(3), tot)
+
+# ---------------------------------------------------------------- fit versus dynamics
+# Heston and market local vol differ in two ways at once: (i) they do not reprice the same
+# vanillas (Heston has fit error), (ii) they have different dynamics. Separate the two with a
+# third model: the local vol built from HESTON's own smiles on the same expiries and strikes.
+#   LV(Heston smiles) vs Heston:      same vanillas, different dynamics  -> dynamics effect
+#   LV(market) vs LV(Heston smiles):  same dynamics class, different vanillas -> fit effect
+calib_h = calib.copy()
+calib_h["iv"] = rep["heston"].to_numpy()
+lv_h = LocalVolSurface.from_surface(calib_h.dropna(subset=["iv"]), S0, r, q)
+rep["lv_h"] = lv_vanilla_ivs(lv_h, rep)
+lv_h_repricing = 100 * rmse(rep["lv_h"] - rep["heston"])          # how well LV_H matches Heston vanillas
+P_lvh = mc.local_vol_paths(S0, spec.T, r, q, lv_h.sigma, spec.n_steps, N_PATHS, np.random.default_rng(12))
+res_h, diag_h = price_mc(spec, P_lvh, r)
+a0_h, _ = price_mc(Autocallable(**{**spec.__dict__, "coupon": 0.0}), P_lvh, r)
+fair_lvh = (100.0 - a0_h.price) / ((res_h.price - a0_h.price) / spec.coupon)
+fair = dict(zip(tab["model"], tab["fair_coupon"]))
+decomp = {"heston": fair["Heston"], "lv_heston_smiles": fair_lvh, "lv_market": fair["Local vol"],
+          "dynamics": fair_lvh - fair["Heston"], "fit": fair["Local vol"] - fair_lvh,
+          "lv_h_repricing_volpts": lv_h_repricing, "lv_h_pv": res_h.price, "lv_h_se": res_h.stderr,
+          "lv_h_p_first_call": diag_h["p_call"][0]}
+# Monte Carlo error of a fair coupon: s.e.(PV) / B, with B = dPV/dc
+B_h = (res_h.price - a0_h.price) / spec.coupon
+decomp["coupon_se_lv_h"] = res_h.stderr / B_h
+pd.Series(decomp).to_csv(REP / "stage3_fit_vs_dynamics.csv", header=False)
+print(decomp)
+
 # ---------------------------------------------------------------- report
 def f(x, d=2):
     return "–" if not np.isfinite(x) else f"{x:.{d}f}"
@@ -136,7 +221,28 @@ for _, row in tab.iterrows():
                  f"{row['fair_coupon']:.2%} | {row['p_first_call']:.1%} | {row['p_ki_loss']:.1%} | "
                  f"{f(row['expected_life'])} | {f(row['dip_mc'])} ± {f(row['dip_se'])} |")
 lines += ["", f"Check: BS down-and-in put closed form with Broadie–Glasserman–Kou daily-monitoring shift = "
-          f"{dip_bs_exact:.2f}% of S0.", "", "![](figures/autocall_model_risk.png)"]
+          f"{dip_bs_exact:.2f}% of S0.", "", "![](figures/autocall_model_risk.png)",
+          "", f"Calibration set: {len(calib)} OTM options on {len(Ts)} expiries from {Ts[0]:.2f}y to {Ts[-1]:.2f}y "
+          "(the stage 2 showcase stops at 2y; here the longest listed expiry is added because the note runs 3y). "
+          f"Beyond {Ts[-1]:.2f}y, local vol keeps each strike's implied vol constant; Heston extends by its dynamics.",
+          "", "## Do the three models reprice the same vanillas?",
+          "Implied-vol RMSE against market mid, vol points, every option in the calibration set "
+          "(local vol repriced by Crank–Nicolson; bias = mean model − market).", "",
+          "| Expiry (y) | Black-Scholes | Heston | Local vol | Heston bias | Local vol bias | Median half spread |",
+          "|---|---|---|---|---|---|---|"]
+for _, b in by_T.iterrows():
+    lines.append(f"| {b['T']:.2f} | {b['bs']:.2f} | {b['heston']:.2f} | {b['lv']:.2f} | {b['heston_bias']:+.2f} | "
+                 f"{b['lv_bias']:+.2f} | {b['half_spread']:.2f} |")
+lines += [f"| All | {tot['bs']:.2f} | {tot['heston']:.2f} | {tot['lv']:.2f} | | | |", "",
+          "## Fit versus dynamics",
+          f"Local vol built from Heston's own smiles reprices Heston's vanillas to {decomp['lv_h_repricing_volpts']:.2f} vol pt, "
+          f"so it and Heston agree on vanillas and differ only in dynamics.", "",
+          "| Model | Fair coupon (± MC s.e.) |", "|---|---|",
+          f"| Heston | {decomp['heston']:.2%} ± {tab.loc[1, 'coupon_se']:.2%} |",
+          f"| Local vol from Heston smiles | {decomp['lv_heston_smiles']:.2%} ± {decomp['coupon_se_lv_h']:.2%} |",
+          f"| Local vol from market smiles | {decomp['lv_market']:.2%} ± {tab.loc[2, 'coupon_se']:.2%} |", "",
+          f"Dynamics effect (same vanillas): {100 * decomp['dynamics']:+.2f} coupon pts. "
+          f"Fit effect (same model class, Heston vs market smiles): {100 * decomp['fit']:+.2f} coupon pts."]
 (REP / "stage3_model_risk.md").write_text("\n".join(lines) + "\n")
 print("\n".join(lines))
 tab.drop(columns="p_call").to_csv(REP / "stage3_model_risk.csv", index=False)

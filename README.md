@@ -25,10 +25,10 @@ See [reports/stage1_crossvalidation.md](reports/stage1_crossvalidation.md).
 **Full write-up: [technical report](reports/technical_report.md) · [portfolio report (PDF)](reports/portfolio/portfolio_report.pdf), LaTeX source in `reports/portfolio/`.**
 
 ## Headline results
-- **Three methods agree**: COS, Crank–Nicolson (measured order 2.00) and Monte Carlo on European, Heston and American prices.
-- **SPX calibration**: Heston fits 2023 surfaces to ~0.8 vol pt but misses the 1-month skew; ρ is stable (CV 3%) while κ and ξ move together (weekly-change correlation 0.96), the ridge predicted by the synthetic identifiability study. In March 2020 the fit error triples.
-- **Hedging**: discrete-hedging error matches Kamal–Derman (0.434 vs 0.441). On real SPX data, short 1-month ATM calls hedged daily earned the variance risk premium in 2023 (+73.6 index points of gamma/theta, mostly given back via vega) and lost heavily in 2020 Q1; gamma/theta + vega + vanna/volga explain 91% of daily P&L variance.
-- **Model risk**: on the same market, the fair coupon of a 3y SPX autocallable is 14.0% (BS), 15.2% (Heston), 16.0% (local vol). BS misses the skew; Heston and local vol match vanillas but imply different forward smiles.
+- **Three methods agree** on three test contracts (a BS call, the Fang–Oosterlee Heston case, the Longstaff–Schwartz American put): COS, Crank–Nicolson (measured order 2.00) and Monte Carlo, within discretisation or statistical error and against published or tree references.
+- **SPX calibration**: Heston fits 2023 surfaces to ~0.8 vol pt but misses the 1-month skew; on a single surface κ is only weakly identified (κ ∈ [1.2, 3.0] fits within 0.1 vol pt of the optimum); across 52 weekly fits in 2023 ρ is stable (CV 3%) while κ and ξ move together (weekly-change correlation 0.96). In March 2020 the fit error triples.
+- **Hedging**: discrete-hedging error matches Kamal–Derman (0.434 vs 0.441). On real SPX data, short 1-month ATM calls hedged daily earned +31.8 index points in 2023 and lost 127.8 in 2020 Q1. An exact full-revaluation split attributes the 2023 result to realised vs implied variance (+74.2), implied-vol re-marks (−34.2) and forward–index basis (−8.2); the Greek (Taylor) residual is located mainly in the last three days before expiry.
+- **Model risk**: on the same market, the fair coupon of a 3y SPX autocallable is 14.0% (BS), 15.2% (Heston), 16.0% (local vol). BS misses the skew. A control model (local vol built from Heston's own smiles) attributes +0.77 of the 0.78-point Heston–local vol gap to dynamics and +0.01 to calibration differences.
 
 ![Model risk](reports/figures/autocall_model_risk.png)
 

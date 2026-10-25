@@ -21,7 +21,7 @@ import pandas as pd
 from derivpricing.calibration.surface import implied_forward
 from derivpricing.data import loaders
 from derivpricing.engines import monte_carlo as mc
-from derivpricing.hedging.backtest import attribute_day, simulate_short_call_hedge
+from derivpricing.hedging.backtest import attribute_day, full_revaluation_day, simulate_short_call_hedge
 from derivpricing.models import black_scholes as bs
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,7 +136,9 @@ def run_trade(data, entry_date, max_month_end):
         if not (np.isfinite(iv0) and np.isfinite(iv1)):
             continue
         a = attribute_day(S0, S1, F0, D0, K, T0, (d1 - d0).days / 365, iv0, iv1, V0, V1)
-        rows.append({"date": d1, "S": S1, "iv": iv1, **a,
+        fr = full_revaluation_day(S0, S1, F0, D0, F1, D1, K, T0, T1, iv0, iv1, V0, V1)
+        rows.append({"date": d1, "S": S1, "iv": iv1, **a, **fr, "F0": F0, "F1": F1, "D0": D0, "D1": D1,
+                     "weekday_gap": (d1 - d0).days,
                      "half_spread": 0.5 * (opt.loc[d0, "ask"] - opt.loc[d0, "bid"])})
     if not rows:
         return None
@@ -168,28 +170,27 @@ def part_b():
         expiry=("expiry", "first"), K=("K", "first"), premium=("premium", "first"),
         iv_entry=("iv_entry", "first"), days=("total", "size"), total=("total", "sum"),
         gamma_theta=("gamma_theta", "sum"), vega=("vega", "sum"), vanna_volga=("vanna_volga", "sum"),
-        residual=("residual", "sum"),
+        residual=("residual", "sum"), fr_spot_time=("fr_spot_time", "sum"), fr_vol=("fr_vol", "sum"),
+        fr_basis=("fr_basis", "sum"),
         realised_vol=("S", lambda s: np.std(np.diff(np.log(s.to_numpy()))) * np.sqrt(252)))
     per_trade.to_csv(REP / "stage4_trades.csv")
 
-    # Figure: per-trade decomposition (stacked components + total marker)
+    # Figure: per-trade decomposition by full revaluation (the three pieces add up to the total)
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.6), gridspec_kw={"width_ratios": [1, 3.2]})
     for ax, (name, grp) in zip(axes, per_trade.groupby(level=0, sort=False)):
         x = np.arange(len(grp))
         labels = [pd.Timestamp(e).strftime("%b") for e in grp.index.get_level_values(1)]
         w = 0.27
-        w = 0.21
-        ax.bar(x - 1.5 * w, grp["gamma_theta"], w, color=BLUE, label="gamma/theta (implied vs realised var)")
-        ax.bar(x - 0.5 * w, grp["vega"], w, color=ORANGE, label="vega (implied vol re-marks)")
-        ax.bar(x + 0.5 * w, grp["vanna_volga"], w, color=AQUA, label="vanna/volga (2nd order)")
-        ax.bar(x + 1.5 * w, grp["residual"], w, color=MUTED, label="residual")
+        ax.bar(x - w, grp["fr_spot_time"], w, color=BLUE, label="spot + time at fixed vol (gamma/theta)")
+        ax.bar(x, grp["fr_vol"], w, color=ORANGE, label="implied vol re-marks")
+        ax.bar(x + w, grp["fr_basis"], w, color=MUTED, label="forward-index basis")
         ax.plot(x, grp["total"], "D", color=INK, ms=5, label="total hedged P&L")
         ax.axhline(0, color=MUTED, lw=0.8)
         ax.set_xticks(x, labels)
         ax.set_title(name, loc="left")
         ax.set_ylabel("index points per short call")
     axes[1].legend(fontsize=7, ncol=2, loc="lower left")
-    fig.suptitle("Short 1-month ATM SPX call, delta-hedged daily: P&L attribution per monthly trade",
+    fig.suptitle("Short 1-month ATM SPX call, delta-hedged daily: full-revaluation P&L attribution per trade",
                  x=0.01, ha="left", fontsize=10)
     fig.tight_layout()
     fig.savefig(FIG / "hedging_spx_attribution.png")
@@ -201,7 +202,10 @@ if __name__ == "__main__":
     a = part_a()
     daily, trades = part_b()
     agg = trades.groupby(level=0, sort=False)[["premium", "total", "gamma_theta", "vega", "vanna_volga",
-                                               "residual"]].sum()
+                                               "residual", "fr_spot_time", "fr_vol", "fr_basis"]].sum()
+    ho = daily.groupby("period", sort=False)[["higher_order_spot", "higher_order_vol", "fr_basis", "residual"]].sum()
+    daily["days_left"] = (daily["expiry"] - daily["date"]).dt.days
+    last3 = daily[daily["days_left"] <= 3].groupby("period", sort=False)["higher_order_vol"].sum()
     hit = trades.groupby(level=0, sort=False)["total"].apply(lambda s: (s > 0).mean())
     iv_rv = trades.groupby(level=0, sort=False)[["iv_entry", "realised_vol"]].mean()
     r2 = 1 - (daily["residual"].var() / daily["total"].var())
@@ -232,9 +236,31 @@ if __name__ == "__main__":
                      f"{agg.loc[p, 'gamma_theta']:.1f} | {agg.loc[p, 'vega']:.1f} | {agg.loc[p, 'vanna_volga']:.1f} | "
                      f"{agg.loc[p, 'residual']:.1f} | "
                      f"{hit[p]:.0%} | {iv_rv.loc[p, 'iv_entry']:.1%} | {iv_rv.loc[p, 'realised_vol']:.1%} |")
-    lines += ["", f"Daily attribution quality: gamma/theta + vega explain {r2_first:.0%} of the variance of daily "
-              f"hedged P&L; adding vanna/volga, {r2:.0%}.",
-              "", "![](figures/hedging_spx_attribution.png)", ""]
+    r2_p = {p: (1 - ((g["residual"] + g["vanna_volga"]).var() / g["total"].var()),
+                1 - g["residual"].var() / g["total"].var(), g["fr_basis"].var() / g["total"].var())
+            for p, g in daily.groupby("period", sort=False)}
+    lines += ["", f"Daily attribution quality, both periods pooled: gamma/theta + vega explain {r2_first:.0%} of the "
+              f"variance of daily hedged P&L; adding vanna/volga, {r2:.0%}. The pooled figure is dominated by the "
+              "large 2020 days. By period:", "",
+              "| Period | gamma/theta + vega | + vanna/volga | variance share of forward-index basis |", "|---|---|---|---|"]
+    lines += [f"| {p} | {a1:.0%} | {a2:.0%} | {b:.0%} |" for p, (a1, a2, b) in r2_p.items()]
+    lines += ["",
+              "### Cumulative attribution by full revaluation",
+              "Each day the option is repriced in three steps: (a) time passes and the index moves, at fixed implied vol, "
+              "with the forward rolling at constant carry; (b) the forward and discount factor jump to their own day-1 "
+              "values (forward-index basis); (c) implied vol moves to its day-1 value. The pieces add up to the total exactly.", "",
+              "| Period | Hedged P&L | spot + time (fixed vol) | implied vol re-marks | forward-index basis |",
+              "|---|---|---|---|---|"]
+    for p in agg.index:
+        lines.append(f"| {p} | {agg.loc[p, 'total']:.1f} | {agg.loc[p, 'fr_spot_time']:.1f} | "
+                     f"{agg.loc[p, 'fr_vol']:.1f} | {agg.loc[p, 'fr_basis']:.1f} |")
+    lines += ["", "Where the Taylor residual comes from (index points, sums over all days):", "",
+              "| Period | Taylor residual | higher-order spot (full reval − gamma/theta) | higher-order vol (full reval − vega − vanna/volga) | of which last 3 days to expiry | forward-index basis |",
+              "|---|---|---|---|---|---|"]
+    for p in ho.index:
+        lines.append(f"| {p} | {ho.loc[p, 'residual']:.1f} | {ho.loc[p, 'higher_order_spot']:.1f} | "
+                     f"{ho.loc[p, 'higher_order_vol']:.1f} | {last3.get(p, 0.0):.1f} | {ho.loc[p, 'fr_basis']:.1f} |")
+    lines += ["", "![](figures/hedging_spx_attribution.png)", ""]
     (REP / "stage4_hedging.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     print(trades.round(2).to_string())

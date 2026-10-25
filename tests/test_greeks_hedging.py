@@ -64,3 +64,20 @@ def test_attribution_explains_a_small_move():
     V1 = bs.price(S1, K0, T0 - dt, r, iv1, q)
     a = attribute_day(S0, S1, F0, D0, K0, T0, dt, iv0, iv1, V0, V1)
     assert abs(a["residual"]) < 0.05 * (abs(a["gamma_theta"]) + abs(a["vega"]))
+
+
+def test_full_revaluation_adds_up_and_vanishes_without_market_moves():
+    """The three full-revaluation pieces sum to the total P&L exactly; with no vol move and a
+    forward that follows the index at constant carry, the basis and vol pieces are zero."""
+    from derivpricing.hedging.backtest import full_revaluation_day, _black
+    S0, S1, K, r, q, T0, T1 = 4000.0, 4050.0, 4000.0, 0.04, 0.015, 30 / 365, 29 / 365
+    F0, D0 = S0 * np.exp((r - q) * T0), np.exp(-r * T0)
+    F1, D1 = S1 * np.exp((r - q) * T1), np.exp(-r * T1)
+    V0, V1 = _black(F0, D0, K, T0, 0.18), _black(F1, D1, K, T1, 0.18)
+    out = full_revaluation_day(S0, S1, F0, D0, F1, D1, K, T0, T1, 0.18, 0.18, V0, V1)
+    assert abs(out["fr_check"]) < 1e-9
+    assert abs(out["fr_basis"]) < 1e-9 and abs(out["fr_vol"]) < 1e-12
+    # with a vol move and a basis jump the pieces still add up
+    V1b = _black(F1 * 1.0005, D1, K, T1, 0.20)
+    out = full_revaluation_day(S0, S1, F0, D0, F1 * 1.0005, D1, K, T0, T1, 0.18, 0.20, V0, V1b)
+    assert abs(out["fr_check"]) < 1e-9 and out["fr_vol"] < 0 and out["fr_basis"] < 0

@@ -16,13 +16,27 @@ Entry on the first trading day of each month at mid; strike nearest the implied 
 | 2020 Q1 | 3 | 189.8 | -127.8 | -96.4 | -65.5 | 10.6 | 23.5 | 33% | 17.2% | 36.3% |
 | 2023 | 12 | 826.7 | 31.8 | 73.6 | -75.6 | 2.1 | 31.7 | 58% | 15.6% | 12.1% |
 
-Daily attribution quality: gamma/theta + vega explain 86% of the variance of daily hedged P&L; adding vanna/volga, 91%.
+Daily attribution quality, both periods pooled: gamma/theta + vega explain 86% of the variance of daily hedged P&L; adding vanna/volga, 91%. The pooled figure is dominated by the large 2020 days. By period:
+
+| Period | gamma/theta + vega | + vanna/volga | variance share of forward-index basis |
+|---|---|---|---|
+| 2020 Q1 | 87% | 97% | 1% |
+| 2023 | 84% | 84% | 15% |
+
+### Cumulative attribution by full revaluation
+Each day the option is repriced in three steps: (a) time passes and the index moves, at fixed implied vol, with the forward rolling at constant carry; (b) the forward and discount factor jump to their own day-1 values (forward-index basis); (c) implied vol moves to its day-1 value. The pieces add up to the total exactly.
+
+| Period | Hedged P&L | spot + time (fixed vol) | implied vol re-marks | forward-index basis |
+|---|---|---|---|---|
+| 2020 Q1 | -127.8 | -84.7 | -41.3 | -1.8 |
+| 2023 | 31.8 | 74.2 | -34.2 | -8.2 |
+
+Where the Taylor residual comes from (index points, sums over all days):
+
+| Period | Taylor residual | higher-order spot (full reval − gamma/theta) | higher-order vol (full reval − vega − vanna/volga) | of which last 3 days to expiry | forward-index basis |
+|---|---|---|---|---|---|
+| 2020 Q1 | 23.5 | 11.7 | 13.6 | -1.8 | -1.8 |
+| 2023 | 31.7 | 0.6 | 39.4 | 25.0 | -8.2 |
 
 ![](figures/hedging_spx_attribution.png)
 
-## Reading the results
-- **2023 is the variance risk premium at work.** Entry implied vol averaged 15.6% against 12.1% realised, so the gamma/theta term earned +73.6 points over 12 trades. Most of it was given back through vega (−75.6): the position is a fixed strike, and in a rising market (2023) that strike slides down the skew (K/S falls), so its implied vol rises even when the smile itself does not move. This is the sticky-strike vs sticky-moneyness question; a smile-adjusted delta (adding vega × dσ/dS from the skew) would move part of this from the vega line into the hedge. Net hedged P&L: +31.8 points on 826.7 points of premium, 7 of 12 trades profitable.
-- **2020 Q1 is the tail.** Realised vol of 36% against 17% implied: gamma/theta −96.4 points and vega −65.5 in three trades. The March trade is cut at 2020-03-31 (the data loaded ends there), after 8 days, so its loss is a lower bound on the full-month loss.
-- **What the hedge cannot remove.** A daily delta hedge neutralises the first-order spot exposure only. What remains is exactly the second-order exposure the Black-Scholes PDE prices in: gamma (realised vs implied variance) and vega (implied vol re-marks). These two explain 86% of daily P&L variance; adding the vanna (spot × vol) and volga (vol × vol) terms raises it to 91%.
-- **Open item.** The remaining residual is small day by day but positive on average (+0.13 points per day in 2023), concentrated on large moves (the two biggest are 2020-03-09 and 2020-02-27). Candidates: third-order spot terms (speed) on fat-tailed daily returns, and the bid–ask noise of daily mids. A full-revaluation P&L explain (reprice at day-1 spot and vol, holding other inputs fixed) would separate them.
-- **Caveats.** No transaction costs: selling at the bid instead of mid would cost roughly half the quoted spread per trade, and index futures hedging adds a few basis points per rebalance. Index points are per one call, before the SPX ×100 multiplier.

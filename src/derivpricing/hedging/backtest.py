@@ -77,3 +77,38 @@ def attribute_day(S0, S1, F0, D0, K, T0, dt, iv0, iv1, V0, V1, is_call=True):
     second_order = -(vanna_S * (S1 - S0) * dvol + 0.5 * volga * dvol**2)
     return {"total": total, "gamma_theta": gamma_theta, "vega": vega, "vanna_volga": second_order,
             "residual": total - gamma_theta - vega - second_order, "delta_hedge_units": delta_S}
+
+
+def _black(F, D, K, T, sigma, is_call=True):
+    """Discounted Black-76 price D * Black(F, K, T, sigma), via BS with S_eff = D F, q = 0."""
+    return bs.price(D * F, K, T, -np.log(D) / T, sigma, 0.0, is_call)
+
+
+def full_revaluation_day(S0, S1, F0, D0, F1, D1, K, T0, T1, iv0, iv1, V0, V1, is_call=True):
+    """Exact split of one day's hedged P&L by repricing, not by Taylor expansion.
+
+    The option moves from state (F0, D0, T0, iv0) to (F1, D1, T1, iv1). Step through it:
+      a) time passes and the index moves, with the forward following the index
+         (F = S1 e^{(r-q) T1}) and r, q unchanged:          spot_time   (plus the hedge P&L)
+      b) the forward and discount factor move to their own day-1 values:  basis
+         (forward-vs-index basis: dividend expectations, rates, parity noise)
+      c) implied vol moves from iv0 to iv1 at the new state:             vol
+    The three pieces add up to the total exactly. Comparing them with the Taylor terms
+    of attribute_day shows which Taylor approximation leaves the residual.
+    """
+    dt = T0 - T1
+    a = attribute_day(S0, S1, F0, D0, K, T0, dt, iv0, iv1, V0, V1, is_call)
+    r = -np.log(D0) / T0
+    q = r - np.log(F0 / S0) / T0
+    delta_S = a["delta_hedge_units"]
+    hedge = delta_S * (S1 - S0) + r * (V0 - delta_S * S0) * dt + q * delta_S * S0 * dt
+    # same r and q, shorter maturity: the forward rolls down by the carry over dt
+    D0_t1, F_a = np.exp(-r * T1), F0 * (S1 / S0) * np.exp(-(r - q) * dt)
+    V_a = _black(F_a, D0_t1, K, T1, iv0, is_call)
+    V_b = _black(F1, D1, K, T1, iv0, is_call)
+    out = {"fr_spot_time": -(V_a - V0) + hedge, "fr_basis": -(V_b - V_a), "fr_vol": -(V1 - V_b)}
+    out["fr_check"] = a["total"] - sum(out.values())   # zero up to rounding
+    # Taylor terms against their full-revaluation counterparts
+    out["higher_order_spot"] = out["fr_spot_time"] - a["gamma_theta"]
+    out["higher_order_vol"] = out["fr_vol"] - a["vega"] - a["vanna_volga"]
+    return out

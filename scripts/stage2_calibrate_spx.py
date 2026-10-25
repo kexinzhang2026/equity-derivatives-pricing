@@ -176,22 +176,29 @@ def showcase(date: str = SHOWCASE_DATE):
 
 # ---------------------------------------------------------------- parameter stability
 
-def weekly_dates(month_df: pd.DataFrame) -> list:
-    """Wednesday of each week (or the nearest trading day in that week)."""
-    d = pd.Series(sorted(month_df["quote_date"].unique()))
+def weekly_dates(quote_dates) -> list:
+    """One date per calendar week: the Wednesday, or the trading day nearest to it.
+    Weeks are formed over all quote dates together, so a week that straddles two monthly
+    files still gets exactly one date."""
+    d = pd.Series(sorted(pd.to_datetime(pd.Series(quote_dates)).unique()))
     wk = d.dt.to_period("W")
     return [g.iloc[np.argmin(np.abs(g.dt.weekday - 2))] for _, g in d.groupby(wk)]
 
 
 def timeseries():
     months = [f"2020{m:02d}" for m in (1, 2, 3)] + [f"2023{m:02d}" for m in range(1, 13)]
+    data = {ym: load_month(ym) for ym in months}
+    targets = {str(pd.Timestamp(x).date()) for x in
+               weekly_dates(pd.concat([m["quote_date"] for m in data.values()]))}
     out_path = REP / "stage2_heston_timeseries.csv"
+    if out_path.exists():                       # drop dates that are not on the weekly grid
+        old = pd.read_csv(out_path)
+        old[old["date"].isin(targets)].to_csv(out_path, index=False)
     done = set(pd.read_csv(out_path)["date"]) if out_path.exists() else set()
-    for ym in months:
-        month = load_month(ym)
-        for date in weekly_dates(month):
+    for ym, month in data.items():
+        for date in sorted(month["quote_date"].unique()):
             ds = str(pd.Timestamp(date).date())
-            if ds in done:
+            if ds in done or ds not in targets:
                 continue
             surf = surface.build_surface(month[month["quote_date"] == date])
             calib = surface.calibration_subset(surf)
