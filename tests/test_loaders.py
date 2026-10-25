@@ -31,3 +31,15 @@ def test_yfinance_snapshot_roundtrip(tmp_path):
     df = loaders.load_yfinance_snapshots(tmp_path)
     assert list(df.columns) == loaders.COLUMNS and len(df) == 1
     assert pd.api.types.is_datetime64_any_dtype(df["expiry"])
+
+
+def test_optionsdx_mapping(tmp_path):
+    text = (" [QUOTE_DATE], [UNDERLYING_LAST], [EXPIRE_DATE], [DTE], [C_VOLUME], [C_BID], [C_ASK],"
+            " [STRIKE], [P_BID], [P_ASK], [P_VOLUME]\n"
+            " 2023-03-01, 3951.39, 2023-03-17, 16.0, 120, 85.1, 86.0, 3950.0, 80.2, 81.0, 300\n")
+    (tmp_path / "spx_eod_202303.txt").write_text(text)
+    df = loaders.load_optionsdx(tmp_path)
+    assert list(df.columns) == loaders.COLUMNS and len(df) == 2
+    call, put = df[df.is_call].iloc[0], df[~df.is_call].iloc[0]
+    assert (call.bid, call.ask, put.bid, put.ask) == (85.1, 86.0, 80.2, 81.0)
+    assert call.strike == 3950.0 and call.spot == 3951.39

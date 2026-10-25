@@ -88,3 +88,24 @@ def char_func(u, T, r, q, sigma):
     """
     u = np.asarray(u, dtype=complex)
     return np.exp(1j * u * (r - q - 0.5 * sigma**2) * T - 0.5 * sigma**2 * u**2 * T)
+
+
+def implied_vol_vec(target_price, S, K, T, r, q=0.0, is_call=True, lo=1e-4, hi=5.0, n_iter=60):
+    """Vectorised implied vol by bisection, for whole option chains at once.
+
+    Bisection is slower per option than Newton but cannot fail: price is monotone
+    in sigma, so halving the bracket 60 times pins sigma to (hi - lo) / 2^60.
+    Running it on arrays makes 10^4 quotes take milliseconds. Quotes outside the
+    attainable price range [price(lo), price(hi)] return NaN.
+    """
+    target = np.asarray(target_price, dtype=float)
+    shape = np.broadcast(target, S, K, T, r, q, is_call).shape
+    a, b = np.full(shape, lo), np.full(shape, hi)
+    p_lo, p_hi = price(S, K, T, r, a, q, is_call), price(S, K, T, r, b, q, is_call)
+    ok = (target >= p_lo) & (target <= p_hi)
+    for _ in range(n_iter):
+        mid = 0.5 * (a + b)
+        above = price(S, K, T, r, mid, q, is_call) > target
+        b = np.where(above, mid, b)
+        a = np.where(above, a, mid)
+    return np.where(ok, 0.5 * (a + b), np.nan)

@@ -29,7 +29,8 @@ def load_yfinance_snapshots(folder: str | Path) -> pd.DataFrame:
         raise FileNotFoundError(f"no spx_*.csv snapshots in {folder}")
     df = pd.concat([pd.read_csv(f, parse_dates=["quote_date", "expiry"]) for f in files],
                    ignore_index=True)
-    return df[COLUMNS]
+    extras = [c for c in ("last_price", "last_trade", "fetched_at") if c in df.columns]
+    return df[COLUMNS + extras]
 
 
 def load_optionmetrics(path: str | Path, spot: pd.Series | None = None) -> pd.DataFrame:
@@ -55,3 +56,35 @@ def load_optionmetrics(path: str | Path, spot: pd.Series | None = None) -> pd.Da
     })
     df["spot"] = df["quote_date"].map(spot) if spot is not None else float("nan")
     return df[COLUMNS]
+
+
+def load_optionsdx(path: str | Path) -> pd.DataFrame:
+    """Map an optionsDX end-of-day file (SPX, free with registration) to the common schema.
+
+    optionsDX ships one row per (quote date, expiry, strike) with calls and puts side by
+    side, and bracketed headers like "[C_BID]". Columns used: QUOTE_DATE, EXPIRE_DATE,
+    STRIKE, UNDERLYING_LAST, C_BID, C_ASK, P_BID, P_ASK, C_VOLUME, P_VOLUME.
+    Accepts a single .txt/.csv file or a folder of them.
+    """
+    path = Path(path)
+    files = sorted(path.glob("*.txt")) + sorted(path.glob("*.csv")) if path.is_dir() else [path]
+    frames = []
+    for f in files:
+        raw = pd.read_csv(f, skipinitialspace=True, low_memory=False)
+        raw.columns = [c.strip().strip("[]").strip() for c in raw.columns]
+        base = pd.DataFrame({
+            "quote_date": pd.to_datetime(raw["QUOTE_DATE"]),
+            "expiry": pd.to_datetime(raw["EXPIRE_DATE"]),
+            "strike": pd.to_numeric(raw["STRIKE"], errors="coerce"),
+            "spot": pd.to_numeric(raw["UNDERLYING_LAST"], errors="coerce"),
+            "open_interest": float("nan"),
+        })
+        for side, is_call in (("C", True), ("P", False)):
+            part = base.copy()
+            part["is_call"] = is_call
+            part["bid"] = pd.to_numeric(raw[f"{side}_BID"], errors="coerce")
+            part["ask"] = pd.to_numeric(raw[f"{side}_ASK"], errors="coerce")
+            vol_col = f"{side}_VOLUME"
+            part["volume"] = pd.to_numeric(raw[vol_col], errors="coerce") if vol_col in raw else float("nan")
+            frames.append(part)
+    return pd.concat(frames, ignore_index=True)[COLUMNS]

@@ -92,3 +92,13 @@ def test_greeks_satisfy_bs_pde(is_call):
     S, r, q, sig = PARAMS["S"], PARAMS["r"], PARAMS["q"], PARAMS["sigma"]
     lhs = g["theta"] + (r - q) * S * g["delta"] + 0.5 * sig**2 * S**2 * g["gamma"]
     assert lhs == pytest.approx(r * V, abs=1e-12)
+
+
+def test_vectorised_implied_vol_matches_scalar():
+    K = np.array([70.0, 90.0, 100.0, 110.0, 140.0])
+    sig = np.array([0.35, 0.25, 0.2, 0.18, 0.22])
+    is_call = K >= 100.0
+    prices = bs.price(100.0, K, 0.5, 0.03, sig, 0.01, is_call)
+    iv = bs.implied_vol_vec(prices, 100.0, K, 0.5, 0.03, 0.01, is_call)
+    assert np.allclose(iv, sig, atol=1e-10)
+    assert np.isnan(bs.implied_vol_vec(np.array([150.0]), 100.0, 100.0, 1.0, 0.0))[0]

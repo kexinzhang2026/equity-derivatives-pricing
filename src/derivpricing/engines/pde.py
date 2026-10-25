@@ -46,6 +46,8 @@ def solve(S0, T, r, q, sigma, payoff: Callable, lower: Callable, upper: Callable
           step_hook: Callable | None = None) -> PDEResult:
     """Generic solver. Products supply the payoff and the Dirichlet boundary values.
 
+    sigma            constant volatility, or a function sigma(t, S) (local volatility),
+                     evaluated at the midpoint of each time step
     payoff(S)        terminal payoff (vectorised)
     lower(tau, S)    value at x_min;  upper(tau, S) value at x_max
     step_hook(tau, S, V) optional: modify V after each step (e.g. discrete barrier monitoring)
@@ -58,8 +60,15 @@ def solve(S0, T, r, q, sigma, payoff: Callable, lower: Callable, upper: Callable
     S = np.exp(x)
     i0 = int(round((x0 - x[0]) / h))
 
-    a, b = 0.5 * sigma**2, r - q - 0.5 * sigma**2
-    lo, di, up = a / h**2 - b / (2 * h), -2 * a / h**2 - r, a / h**2 + b / (2 * h)
+    def coefficients(sig):
+        """Tridiagonal stencil of L on the interior nodes; sig is a scalar or per-node array."""
+        a, b = 0.5 * sig**2, r - q - 0.5 * sig**2
+        stencil = (a / h**2 - b / (2 * h), -2 * a / h**2 - r, a / h**2 + b / (2 * h))
+        return tuple(np.broadcast_to(c, (M - 1,)) for c in stencil)
+
+    local_vol = callable(sigma)
+    if not local_vol:
+        lo, di, up = coefficients(sigma)
 
     V = _cell_average(payoff, x, h)
     exercise = payoff(S) if american else None
@@ -70,18 +79,21 @@ def solve(S0, T, r, q, sigma, payoff: Callable, lower: Callable, upper: Callable
     tau = 0.0
     n_int = M - 1
     for theta, k in steps:
+        if local_vol:
+            # sigma(t, S) frozen at the midpoint of the step, calendar time t = T - tau
+            lo, di, up = coefficients(sigma(T - (tau + 0.5 * k), S[1:-1]))
         tau += k
         # Explicit part on the interior: (I + (1-theta) k L) V^n
         rhs = V[1:-1] + (1 - theta) * k * (lo * V[:-2] + di * V[1:-1] + up * V[2:])
         V_new_lo, V_new_hi = lower(tau, S[0]), upper(tau, S[-1])
         # Move the known boundary values of the implicit part to the right-hand side.
-        rhs[0] += theta * k * lo * V_new_lo
-        rhs[-1] += theta * k * up * V_new_hi
+        rhs[0] += theta * k * lo[0] * V_new_lo
+        rhs[-1] += theta * k * up[-1] * V_new_hi
         # Implicit tridiagonal matrix (I - theta k L), stored in banded form.
         ab = np.zeros((3, n_int))
-        ab[0, 1:] = -theta * k * up
+        ab[0, 1:] = -theta * k * up[:-1]      # ab[0, j] = A[j-1, j]
         ab[1, :] = 1 - theta * k * di
-        ab[2, :-1] = -theta * k * lo
+        ab[2, :-1] = -theta * k * lo[1:]      # ab[2, j] = A[j+1, j]
         if american:
             V_int = _penalty_solve(ab, rhs, exercise[1:-1])
         else:

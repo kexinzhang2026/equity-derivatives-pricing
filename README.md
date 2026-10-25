@@ -8,8 +8,9 @@ One product, three independent pricing methods, checked against each other — t
 | Heston via COS (Fourier) | ✅ tested against an independent Fourier method |
 | Crank–Nicolson PDE, Rannacher start, American via penalty | ✅ measured order 2.00 |
 | Monte Carlo: antithetic, control variates, Heston QE, Longstaff–Schwartz | ✅ tested |
-| Heston / SABR calibration to SPX implied vol surface | planned |
-| Dupire local volatility | planned |
+| Market data: implied forward from parity, OTM IV surface | ✅ tested |
+| Heston (whole surface) and SABR (per expiry) calibration | ✅ recovers known parameters on synthetic surfaces; SPX data pending |
+| Dupire local volatility from SVI, local-vol PDE | ✅ reprices Heston vanillas within 0.03 vol pt |
 | Barrier and autocallable: model risk across BS / Heston / local vol | planned |
 | Greeks and hedging backtest with P&L attribution | planned |
 
@@ -30,7 +31,7 @@ docs/derivations/   every formula used in code, derived step by step
 ## Run
 ```bash
 pip install -e ".[dev]"
-pytest                              # 44 tests, ~5 s
+pytest                              # 59 tests, ~10 s
 python scripts/stage1_crossval.py   # regenerate the stage 1 table and figures
 python scripts/fetch_spx_chain.py   # daily SPX option chain snapshot (needs internet)
 ```
