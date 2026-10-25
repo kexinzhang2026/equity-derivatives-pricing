@@ -50,7 +50,10 @@
 - 模型风险：同一组市场数据下，BS（平值波动率）/ Heston / 局部波动率（Dupire）给出的价格差异，以及差异来自哪里（远期偏斜、波动率的波动率）
 - 产出：模型间价格差异表 + 一段你自己的结论
 
-## 阶段 4　Greeks 与对冲回测（约 1.5 周）
+## 阶段 4　Greeks 与对冲回测（已完成，报告：reports/stage4_hedging.md）
+**结果**：MC Greeks（pathwise / LR / 混合 gamma）与解析值一致；离散对冲误差与 Kamal–Derman 公式一致；真实 SPX 回测（2020Q1 + 2023 每月卖出 1 个月平值看涨并每日对冲）：2023 年 gamma/theta +73.6 点（波动率风险溢价），vega −75.6，净 +31.8；2020Q1 净 −127.8；gamma/theta + vega + vanna/volga 解释 91% 的日度 P&L 方差。
+
+原计划：
 - Greeks：解析 / 有限差分（PDE 网格直接读）/ MC pathwise 与 likelihood ratio
 - 对冲回测：模拟路径和真实 SPX 历史路径上做 delta、delta-vega 对冲
 - 误差拆解：离散对冲误差（∝ gamma × 调仓间隔）、模型误设（实现波动率 ≠ 隐含波动率）、交易成本
