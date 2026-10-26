@@ -56,7 +56,7 @@
 \renewcommand{\sectionmark}[1]{\markboth{\thesection\quad #1}{}}
 \fancyhead[L]{\color{muted}\scriptsize Kexin (Eve) Zhang \quad\textbar\quad Equity derivatives research}
 \fancyhead[R]{\color{muted}\scriptsize\leftmark}
-\fancyfoot[L]{\color{muted}\scriptsize Code and data pipeline: github.com/kexinzhang2026/equity-derivatives-pricing}
+\fancyfoot[L]{\color{muted}\scriptsize Code: \href{https://github.com/kexinzhang2026/equity-derivatives-pricing}{\color{muted}github.com/kexinzhang2026/equity-derivatives-pricing}}
 \fancyfoot[R]{\color{navy}\small\bfseries\thepage}
 
 % ---------------------------------------------------------------- captions
@@ -139,8 +139,9 @@ Jan--Mar 2020 and Jan--Dec 2023\\
 4.93 million quotes, 311 dates
 
 \vspace{12pt}
-\kicker{Reproducibility}\par\vspace{3pt}
-\small 71 unit tests in continuous integration; one script per stage regenerates every table and figure.
+\kicker{Code}\par\vspace{3pt}
+\small \href{https://github.com/kexinzhang2026/equity-derivatives-pricing}{\color{teal}github.com/kexinzhang2026/\\equity-derivatives-pricing}\\[2pt]
+71 unit tests in continuous integration; one script per stage regenerates every table and figure.
 \end{minipage}
 
 \vfill
@@ -761,6 +762,7 @@ only expiries up to six months are used. Right: the refitted $\xi$ rises with $\
 \end{figure}
 
 \section{Reproducibility}
+All code, tests, derivations and stage scripts are at \href{https://github.com/kexinzhang2026/equity-derivatives-pricing}{github.com/kexinzhang2026/equity-derivatives-pricing}. Raw optionsDX files are not redistributed; the README explains how to obtain them.
 \begin{itemize}
 \item 71 unit tests (pytest) run in continuous integration on every push. They use synthetic inputs only and need no market data.
 \item \textbf{Black-Scholes:} textbook values, put--call parity, no-arbitrage bounds, Greeks against finite differences and against
